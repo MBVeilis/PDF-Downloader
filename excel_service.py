@@ -20,16 +20,18 @@ def load_reports(file_path: str | Path = EXCEL_FILE) -> list[dict[str, Any]]:
 
 		reports = []
 		for row in rows:
-			primary_cell = row[0] if row else None
-			backup_cell = row[1] if len(row) > 1 else None
+			id_cell = row[0] if row else None
+			primary_cell = row[1] if len(row) > 1 else None
+			backup_cell = row[2] if len(row) > 2 else None
 			if all(
 				cell is None or (cell.value is None and cell.hyperlink is None)
-				for cell in (primary_cell, backup_cell)
+				for cell in (id_cell, primary_cell, backup_cell)
 			):
 				continue
 
 			reports.append(
 				{
+					"br_id": id_cell.value if id_cell else None,
 					"pdf_link": (
 						primary_cell.hyperlink.target
 						if primary_cell and primary_cell.hyperlink
