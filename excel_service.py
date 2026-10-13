@@ -18,21 +18,28 @@ def load_reports(file_path: str | Path = EXCEL_FILE) -> list[dict[str, Any]]:
 		if header_cells is None:
 			return []
 
-		headers = [
-			str(cell.value).strip() if cell.value is not None else f"column_{index + 1}"
-			for index, cell in enumerate(header_cells)
-		]
 		reports = []
 		for row in rows:
-			if all(cell.value is None and cell.hyperlink is None for cell in row):
+			primary_cell = row[0] if row else None
+			backup_cell = row[1] if len(row) > 1 else None
+			if all(
+				cell is None or (cell.value is None and cell.hyperlink is None)
+				for cell in (primary_cell, backup_cell)
+			):
 				continue
 
 			reports.append(
 				{
-					headers[index]: (
-						cell.hyperlink.target if cell.hyperlink else cell.value
-					)
-					for index, cell in enumerate(row)
+					"pdf_link": (
+						primary_cell.hyperlink.target
+						if primary_cell and primary_cell.hyperlink
+						else primary_cell.value if primary_cell else None
+					),
+					"backup_link": (
+						backup_cell.hyperlink.target
+						if backup_cell and backup_cell.hyperlink
+						else backup_cell.value if backup_cell else None
+					),
 				}
 			)
 		return reports
