@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Miljøfiler
+.env
+
+# Midlertidige testresultater
+.coverage
+htmlcov/
