@@ -1,7 +1,5 @@
 from openpyxl import Workbook
-
 from excel_service import EXCEL_FILE, load_reports
-
 
 def test_load_reports_keeps_br_id_and_reads_primary_and_backup_links(tmp_path, monkeypatch):
     file_path = tmp_path / "reports.xlsx"
