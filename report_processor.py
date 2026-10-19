@@ -8,16 +8,23 @@ BASE_DIR = Path(__file__).resolve().parent
 OUTPUT_DIR = BASE_DIR / "pdf_files"
 
 def get_pdf_filename(url: str | None, br_id: Any) -> str:
-	"""Get the filename from the URL, or use the report ID."""
+	"""Get the filename from the URL, or use the domain name as fallback."""
 
 	if url:
+		parsed_url = urlparse(url)
 		filename = unquote(Path(urlparse(url).path).name)
 
 		if filename and filename.lower().endswith(".pdf"):
 			return filename
 
+		domain = parsed_url.netloc
+
+		if domain:
+			return f"{domain}.pdf"
+
 	# Some PDF URLs have no filename or .pdf extension.
 	return f"{br_id}.pdf"
+        
 
 def process_report(report: dict[str, Any]) -> None:
 	"""Download and save one report, updating its metadata."""
