@@ -1,170 +1,181 @@
 import report_processor
+import asyncio
+import pytest
+
+
+def make_report(br_id=1, backup=None):
+    return {
+        "br_id": br_id,
+        "pdf_link": "https://example.com/report.pdf",
+        "backup_link": backup,
+        "successful_url": None,
+        "pdf_filename": None,
+        "pdf_path": None,
+        "status": "Pending",
+    }
+
 
 # -------------------------------
 # TESTS get_pdf_filename FUNCTION
 # -------------------------------
 
-def test_get_pdf_filename_uses_path_name_when_url_has_pdf_filename():
-    url = (
-        "https://www.novonordisk.com/content/dam/nncorp/global/en/investors/irmaterial/annual_report/2025/novo-nordisk-annual-report-2024.pdf"
+def test_get_pdf_filename_uses_pdf_path_name():
+    url = "https://example.com/reports/annual-report-2025.pdf"
+
+    assert report_processor.get_pdf_filename(url, 1) == (
+        "annual-report-2025.pdf"
     )
 
-    result = report_processor.get_pdf_filename(url, br_id=1)
 
-    assert result == "novo-nordisk-annual-report-2024.pdf"
+def test_get_pdf_filename_uses_domain_without_pdf_filename():
+    url = "https://investor.example.com/static/12345"
 
-def test_get_pdf_filename_uses_domain_when_url_has_no_pdf_filename():
-    url = (
-        "https://investor.maersk.com/static-files/31bf05a1-6f0c-4fbd-a3c7-3f58e044f798"
+    assert report_processor.get_pdf_filename(url, 2) == (
+        "investor.example.com.pdf"
     )
-    
-    result = report_processor.get_pdf_filename(url, br_id=6)
 
-    assert result == "investor.maersk.com.pdf"
 
-def test_get_pdf_filename_when_url_does_not_exist():
-    
-    result = report_processor.get_pdf_filename(None, br_id=5)
+def test_get_pdf_filename_without_url():
+    assert report_processor.get_pdf_filename(None, 5) == "5.pdf"
 
-    assert result == "5.pdf"
 
-def test_get_pdf_filename_handles_uppercase_pdf_extension():
-    url = "https://example.com/reports/ANNUAL-REPORT.PDF"
+def test_get_pdf_filename_handles_uppercase_extension():
+    url = "https://example.com/ANNUAL-REPORT.PDF"
 
-    result = report_processor.get_pdf_filename(url, br_id=10)
+    assert report_processor.get_pdf_filename(url, 10) == (
+        "ANNUAL-REPORT.PDF"
+    )
 
-    assert result == "ANNUAL-REPORT.PDF"
 
-def test_get_pdf_filename_uses_br_id_when_url_has_no_domain():
-    url = "/some/path"
-
-    result = report_processor.get_pdf_filename(url, br_id=11)
-
-    assert result == "11.pdf"
+def test_get_pdf_filename_without_domain():
+    assert report_processor.get_pdf_filename("/some/path", 11) == "11.pdf"
 
 # ------------------------------------------------------
 # TESTS process_report FUNCTION
 # USES monkeypatch FOR MOCKING AND TO SIMULATE DOWNLOADS
 # ------------------------------------------------------
 
-def test_process_report_download_success(monkeypatch, tmp_path):
-    report = {
-        "br_id": 1,
-        "pdf_link": "https://example.com/report.pdf",
-        "backup_link": None,
-        "successful_url": None,
-        "pdf_filename": None,
-        "pdf_path": None,
-        "status": "Pending"
-    }
+@pytest.mark.asyncio
+async def test_process_report_download_success(monkeypatch, tmp_path):
+    report = make_report()
+    history = {}
+    history_file = tmp_path / "history.json"
+    content = b"%PDF-1.4 test content"
 
-    pdf_content = b"%PDF-text-content"
+    async def fake_download(url, session):
+        return content
 
-    def fake_download_pdf(url):
-        return pdf_content
+    def fake_record(report, history, file_path):
+        history[str(report["br_id"])] = {
+            "status": report["status"],
+            "pdf_filename": report["pdf_filename"],
+        }
 
-    monkeypatch.setattr(
-        report_processor,
-        "download_pdf",
-        fake_download_pdf
+    monkeypatch.setattr(report_processor, "download_pdf", fake_download)
+    monkeypatch.setattr(report_processor, "record_report", fake_record)
+
+    result = await report_processor.process_report(
+        report, None, history, history_file,
+        asyncio.Semaphore(1), tmp_path,
     )
-    monkeypatch.setattr(report_processor, "OUTPUT_DIR", tmp_path)
 
-    report_processor.process_report(report)
+    assert result["status"] == "downloaded"
+    assert result["successful_url"] == report["pdf_link"]
+    assert result["pdf_filename"] == "1_report.pdf"
+    assert (tmp_path / "1_report.pdf").read_bytes() == content
+    assert history["1"]["status"] == "downloaded"
 
-    assert report["status"] == "downloaded"
-    assert report["successful_url"] == report["pdf_link"]
-    assert report["pdf_filename"] == "1_report.pdf"
-    assert (tmp_path / "1_report.pdf").read_bytes() == pdf_content
-    
 
-def test_process_report_uses_backup_url_when_primary_fails(monkeypatch, tmp_path):
-    report = {
-        "br_id": 2,
-        "pdf_link": "https://example.com/broken.pdf",
-        "backup_link": "https://backup.example.com/report.pdf",
-        "successful_url": None,
-        "pdf_filename": None,
-        "pdf_path": None,
-        "status": "Pending"
-    }
+@pytest.mark.asyncio
+async def test_process_report_uses_backup_when_primary_fails(
+    monkeypatch, tmp_path
+):
+    report = make_report(2, "https://backup.example.com/report.pdf")
+    history = {}
 
-    def fake_download_pdf(url):
+    async def fake_download(url, session):
         if url == report["pdf_link"]:
             return None
-        return b"%PDF-backup-content"
+        return b"%PDF-1.4 backup content"
 
+    monkeypatch.setattr(report_processor, "download_pdf", fake_download)
     monkeypatch.setattr(
         report_processor,
-        "download_pdf",
-        fake_download_pdf
+        "record_report",
+        lambda report, history, file_path: None,
     )
-    monkeypatch.setattr(report_processor, "OUTPUT_DIR", tmp_path)
 
-    report_processor.process_report(report)
+    result = await report_processor.process_report(
+        report, None, history, tmp_path / "history.json",
+        asyncio.Semaphore(1), tmp_path,
+    )
 
-    assert report["status"] == "downloaded"
-    assert report["successful_url"] == report["backup_link"]
-    assert (tmp_path / "2_report.pdf").read_bytes() == b"%PDF-backup-content"
+    assert result["status"] == "downloaded"
+    assert result["successful_url"] == report["backup_link"]
+    assert (tmp_path / "2_report.pdf").is_file()
 
-def test_process_report_fails_when_both_urls_fail(monkeypatch, tmp_path):
-    report = {
-        "br_id": 3,
-        "pdf_link": "https://example.com/broken.pdf",
-        "backup_link": "https://backup.example.com/broken.pdf",
-        "successful_url": None,
-        "pdf_filename": None,
-        "pdf_path": None,
-        "status": "Pending"
-    }
 
-    def fake_download_pdf(url):
+@pytest.mark.asyncio
+async def test_process_report_fails_when_both_urls_fail(
+    monkeypatch, tmp_path
+):
+    report = make_report(3, "https://backup.example.com/broken.pdf")
+    history = {}
+    recorded = []
+
+    async def fake_download(url, session):
         return None
 
-    monkeypatch.setattr(
-        report_processor,
-        "download_pdf",
-        fake_download_pdf
+    def fake_record(report, history, file_path):
+        recorded.append(report["status"])
+
+    monkeypatch.setattr(report_processor, "download_pdf", fake_download)
+    monkeypatch.setattr(report_processor, "record_report", fake_record)
+
+    result = await report_processor.process_report(
+        report, None, history, tmp_path / "history.json",
+        asyncio.Semaphore(1), tmp_path,
     )
-    monkeypatch.setattr(report_processor, "OUTPUT_DIR", tmp_path)
 
-    report_processor.process_report(report)
-
-    assert report["status"] == "failed"
-    assert report["successful_url"] is None
-    assert report["pdf_filename"] is None
-    assert report["pdf_path"] is None
+    assert result["status"] == "failed"
+    assert result["successful_url"] is None
+    assert recorded == ["failed"]
     assert list(tmp_path.iterdir()) == []
 
-def test_process_report_fails_when_saving_pdf_raises_oserror(monkeypatch, tmp_path):
-    report = {
-        "br_id": 4,
-        "pdf_link": "https://example.com/report.pdf",
-        "backup_link": None,
-        "successful_url": None,
-        "pdf_filename": None,
-        "pdf_path": None,
-        "status": "Pending"
-    }
 
-    def fake_download_pdf(url):
-        return b"%PDF-test-content"
+@pytest.mark.asyncio
+async def test_process_report_preserves_existing_pdf_on_write_failure(
+    monkeypatch, tmp_path
+):
+    report = make_report(4)
+    existing = tmp_path / "4_report.pdf"
+    existing.write_bytes(b"%PDF-1.4 old content")
 
-    def fake_write_bytes(self, content):
-        raise OSError("Simulated file write error")
+    async def fake_download(url, session):
+        return b"%PDF-1.4 new content"
 
+    monkeypatch.setattr(report_processor, "download_pdf", fake_download)
     monkeypatch.setattr(
         report_processor,
-        "download_pdf",
-        fake_download_pdf
+        "record_report",
+        lambda report, history, file_path: None,
     )
-    monkeypatch.setattr(report_processor, "OUTPUT_DIR", tmp_path)
+
+    original_write_bytes = report_processor.Path.write_bytes
+
+    def fake_write_bytes(self, content):
+        if self.name.endswith(".part"):
+            raise OSError("Simulated write failure")
+        return original_write_bytes(self, content)
+
     monkeypatch.setattr(
-        report_processor.Path,
-        "write_bytes",
-        fake_write_bytes
+        report_processor.Path, "write_bytes", fake_write_bytes
     )
 
-    report_processor.process_report(report)
+    result = await report_processor.process_report(
+        report, None, {}, tmp_path / "history.json",
+        asyncio.Semaphore(1), tmp_path,
+    )
 
-    assert report["status"] == "failed"
+    assert result["status"] == "failed"
+    assert existing.read_bytes() == b"%PDF-1.4 old content"
