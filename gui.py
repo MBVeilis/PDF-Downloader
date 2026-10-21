@@ -1,4 +1,3 @@
-
 import asyncio
 import os
 import queue
@@ -86,7 +85,7 @@ class PDFDownloaderGUI:
 
         stats = ttk.LabelFrame(
             main,
-            text="Resultater",
+            text="Results",
             padding=12,
         )
         stats.pack(fill="x", pady=(0, 14))
