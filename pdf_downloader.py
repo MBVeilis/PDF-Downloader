@@ -1,5 +1,3 @@
-# import requests
-import certifi
 import aiohttp
 
 
