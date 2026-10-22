@@ -24,6 +24,7 @@ def main():
         print(f"PDFs failed: {failed}")
         print("PDF folder: pdf_files/")
         print("Excel report: pdf_files/downloaded_reports.xlsx")
+        print("Test")
 
     except Exception as error:
         print(f"\nThe downloader could not complete: {error}")
